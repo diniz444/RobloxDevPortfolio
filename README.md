@@ -44,6 +44,18 @@
 
 # 
 
+# Round System, Shop System and Data System Showcase
+
+This project focuses on the core backend architecture of a Roblox game, emphasizing server-side security and modular scripting.
+
+## 📺 Video Demonstration
+[![Roblox Systems Showcase](https://img.youtube.com/vi/pSt__FOqdGs/0.jpg)](https://www.youtube.com/watch?v=pSt__FOqdGs)
+
+> [!IMPORTANT]
+> **PLACEHOLDER ALERT:** All maps, 3D models (gears), and UI elements shown in the video are **placeholders**. This project is a demonstration of **programming and system architecture only**.
+
+---
+
 # \---
 
 # 
