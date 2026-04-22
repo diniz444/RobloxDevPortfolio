@@ -11,6 +11,7 @@ local RoundModule = {}
 --- Table storing all possible game states
 RoundModule.States = {
 	[`Intermission`] = `Intermission`,
+	[`Waiting`] = `Waiting`,
 	[`Cutscene`] = `Cutscene`,
 	[`OnGame`] = `OnGame`,
 	[`Ending`] = `Ending`,
@@ -33,10 +34,10 @@ end
 function RoundModule.FormatDuration(seconds: number)
 	-- Divides seconds into 60-second groups (e.g., 240s = 4m)
 	local minutes = math.floor(seconds / 60)
-	
+
 	-- Calculates the remainder (e.g., 125s / 60 = 2m, 5s remainder)
 	local remainder = seconds % 60
-	
+
 	-- Returns formatted string as "m:ss"
 	return string.format(`%d:%02d`, minutes, remainder)
 end

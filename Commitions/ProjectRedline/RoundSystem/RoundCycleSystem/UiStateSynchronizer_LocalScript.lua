@@ -17,27 +17,40 @@ local TimerValue = CycleVal:WaitForChild("Timer")
 local StateText = script.Parent:WaitForChild("StateText")
 local TimerText = script.Parent:WaitForChild("TimerText")
 
+----FUNCTIONS
+
+local function UpdateStateUI(val)
+		-- Updates the HUD label based on the current state
+	if val == "Intermission" then
+		StateText.Text = "On Intermission"
+
+	elseif val == "Cutscene" then
+		StateText.Text = "On Cutscene"
+
+	elseif val == "OnGame" then
+		StateText.Text = "On Game"
+
+	elseif val == "Ending" then
+		StateText.Text = "On Ending"
+		
+	elseif val == "Waiting" then
+		StateText.Text = `Waiting for more players`
+	end
+end
+
+local function UpdateTimerUI(val)
+	-- Directly displays the formatted MM:SS string sent by the server
+	TimerText.Text = val
+end
+
 -------- EVENTS
 
 --- Syncs the UI text whenever the Game State changes
-StateValue.Changed:Connect(function(val)
-	-- Updates the HUD label based on the current state
-	if val == "Intermission" then
-		StateText.Text = "On Intermission"
-		
-	elseif val == "Cutscene" then
-		StateText.Text = "On Cutscene"
-		
-	elseif val == "OnGame" then
-		StateText.Text = "On Game"
-		
-	elseif val == "Ending" then
-		StateText.Text = "On Ending"
-	end
-end)
+StateValue.Changed:Connect(UpdateStateUI)
 
 --- Syncs the timer display whenever the time value is updated by the server
-TimerValue.Changed:Connect(function(val)
-	-- Directly displays the formatted MM:SS string sent by the server
-	TimerText.Text = val
-end)
+TimerValue.Changed:Connect(UpdateTimerUI)
+
+UpdateStateUI(StateValue.Value)
+
+UpdateTimerUI(TimerValue.Value)
