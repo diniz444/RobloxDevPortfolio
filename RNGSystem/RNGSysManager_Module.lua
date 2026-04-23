@@ -1,74 +1,99 @@
---[[
-    @title: Dynamic Weighted RNG Module with Pity System
-    @author: 
-    @description: A modular system for item rolling using probability weights. 
-                  Includes a dynamic luck multiplier (Pity System) that increases 
-                  rarity chances based on player attempts.
-    @version: 1.0
-]]
+-- [[ DYNAMIC RNG & PITY SYSTEM | ROBLOX PORTFOLIO ]]
+-- Author: [diniz444]
+-- Description: Core module for calculating item probability with a luck-based Pity System.
+-- "Cogito, ergo sum."
 
 local RNGModule = {}
 
--- [[ Configuration Table ]]
+-- Probability table for all available fruits
 RNGModule.Fruits = {
-	-- ADD YOUR ITENS HERE
-	-- ["Name"] = {Weight = 100, Rarity = "Common"},
+	["Kilo"]   = {Chance = 500, Rarity = "Common"},
+	["Flame"]  = {Chance = 400, Rarity = "Common"},
+	["Gomu"]   = {Chance = 350, Rarity = "Rare"},
+	["Spring"] = {Chance = 500, Rarity = "Common"},
+	["Hito"]   = {Chance = 450, Rarity = "Rare"},
+	["Gura"]   = {Chance = 200, Rarity = "Epic"},
+	["Light"]  = {Chance = 150, Rarity = "Epic"},
+	["Hie"]    = {Chance = 150, Rarity = "Epic"},
+	["Magu"]   = {Chance = 150, Rarity = "Epic"},
+	["Yami"]   = {Chance = 100, Rarity = "Legendary"},
+	["Dragon"] = {Chance = 10,  Rarity = "Legendary"},
+	["Neko"]   = {Chance = 10,  Rarity = "Legendary"},
+	["Nika"]   = {Chance = 1,   Rarity = "God"}
 }
 
---- Rolls for a random fruit based on weight and pity count.
--- @param PityCount number: The current number of failed rare rolls for the player.
--- @return string, number: The name of the fruit rolled and the updated Pity count.
-function RNGModule.Roll(PityCount)
+--- Processes a randomized fruit roll for a specific player
+-- @param player: The player instance requesting the roll
+-- @return: Table containing selectedFruit name and selectedData
+function RNGModule.Roll(player: Player)
 	local totalWeight = 0
-	local currentPity = PityCount or 0
+	local currentPity = player:GetAttribute("PityCount") or 0
 	
-	-- Luck multiplier: 1% increase per pity point (e.g., 100 pity = 2x luck)
+	-- Calculates luck multiplier based on accumulated Pity
 	local luckMultiplier = 1 + (currentPity / 100)
 	
-	-- 1. Calculate Total Weight (Dynamic)
+	local selectedFruit = nil
+	local selectedData = nil
+	
+	-- 1. Calculate total dynamic weight based on luck
 	for _, fruitData in pairs(RNGModule.Fruits) do
-		-- Rare fruits (Weight <= 200) get the luck boost
-		if fruitData.Weight <= 200 then
-			totalWeight += (fruitData.Weight * luckMultiplier)
+		if fruitData.Chance <= 200 then
+			-- Apply luck multiplier to rare/epic+ items
+			totalWeight += (fruitData.Chance * luckMultiplier)
 		else
-			totalWeight += fruitData.Weight
+			totalWeight += fruitData.Chance
 		end
 	end
 	
-	-- Check if the table is empty to avoid errors
-	if totalWeight <= 0 then 
-		warn("RNGModule: No fruits found in the configuration table!")
-		return nil, currentPity 
-	end
-
+	-- 2. Generate random target weight
 	local randomWeight = math.random(1, math.floor(totalWeight))
 	local accumulatedWeight = 0
 	
-	-- 2. Probability Mapping Loop
+	-- 3. Selection loop: Locates the fruit corresponding to the random weight
 	for fruitName, fruitData in pairs(RNGModule.Fruits) do
-		local weightValue = fruitData.Weight
+		local weightValue = fruitData.Chance
 		
-		-- Apply same luck logic here to keep the "ruler" consistent
+		-- Match luck logic used in totalWeight calculation
 		if weightValue <= 200 then
 			accumulatedWeight += (weightValue * luckMultiplier)
 		else
 			accumulatedWeight += weightValue
 		end
 		
-		-- Check if roll falls within this fruit's range
 		if randomWeight <= accumulatedWeight then
-			
-			-- Update Pity: Reset on Rare+, Increment on Common/Rare
-			local newPity = currentPity
-			if fruitData.Rarity == "Common" or fruitData.Rarity == "Rare" then
-				newPity += 1
-			else
-				newPity = 0
-			end
-			
-			return fruitName, newPity
+			selectedFruit = fruitName
+			selectedData = fruitData
+			break
 		end
 	end
+	
+	-- 4. Fallback mechanism to prevent nil returns
+	if not selectedFruit then
+		selectedFruit = "Kilo"
+		selectedData = RNGModule.Fruits["Kilo"]
+	end
+	
+	-- 5. Pity Logic: Increment for Common/Rare, reset for higher rarities
+	local nextPityValue = 0 
+
+	if selectedData.Rarity == "Common" or selectedData.Rarity == "Rare" then
+		nextPityValue = currentPity + 1
+	else
+		-- Reset Pity after a successful rare pull
+		nextPityValue = 0
+	end
+
+	-- Update player's persistent data via Attributes
+	player:SetAttribute("PityCount", nextPityValue)
+
+	-- Log results for server-side verification
+	print(string.format("[RNG] Player: %s | Rolled: %s (%s) | Pity: %d -> %d", 
+		player.Name, selectedFruit, selectedData.Rarity, currentPity, nextPityValue))
+	
+	return {
+		selectedFruit = selectedFruit,
+		selectedData = selectedData
+	}
 end
 
 return RNGModule
