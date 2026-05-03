@@ -4,7 +4,7 @@ This repository contains my professional game frameworks. Each system is modular
 
 ---
 
-Round-Based Framework (Core Game Loop)
+Round-Based-Game Framework (Core Game Loop)
 The backbone of any competitive game. Handles rounds, data, and economy in a single integrated flow.
 
 ### 📺 Showcase
