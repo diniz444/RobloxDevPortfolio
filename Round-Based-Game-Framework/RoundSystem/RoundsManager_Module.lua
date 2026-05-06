@@ -1,31 +1,31 @@
--- [[ ROUND MANAGER MODULE | ROBLOX PORTFOLIO ]]
+-- [[ ROUND MANAGER MODULE | GAME ARCHITECTURE ]]
 -- Author: [diniz444]
--- Description: Core logic for game states, map rotation, and player session data.
+-- Description: Core logic for game states, map rotation history, and session-specific equipment tracking.
 
 local RoundModule = {}
 
--- // 1. MAP MANAGEMENT
--- FrozenMaps prevents the same map from being picked twice in a row.
+-- // 1. MAP ROTATION MANAGEMENT
+-- History buffer to prevent the same map from being selected consecutively.
 local FrozenMaps = {}
 local MAX_FROZEN_MAPS = 2
-local MapsFolder = game.ReplicatedStorage:WaitForChild("Maps")
+local MapsFolder = game:GetService("ReplicatedStorage"):WaitForChild("Maps")
 local maps = MapsFolder:GetChildren()
 
--- Randomly selects a map that isn't currently "frozen".
+-- Selects a map using a filtered pool to ensure gameplay variety.
 function RoundModule.ChooseMap()
 	local availableMaps = {}
 	
-	-- Filter out frozen maps
-	for _, map in pairs(maps) do
+	-- Filter out maps currently in the "Frozen" history buffer
+	for _, map in ipairs(maps) do
 		if not table.find(FrozenMaps, map.Name) then
 			table.insert(availableMaps, map)
 		end
 	end	
 	
-	-- Select a random map from the available pool
+	-- Select random map from the validated pool
 	local chosenMap = availableMaps[math.random(1, #availableMaps)]
 	
-	-- Add to frozen list and maintain max limit
+	-- Update history buffer and maintain size limit
 	table.insert(FrozenMaps, chosenMap.Name)
 	if #FrozenMaps > MAX_FROZEN_MAPS then
 		table.remove(FrozenMaps, 1)
@@ -34,8 +34,8 @@ function RoundModule.ChooseMap()
 	return chosenMap
 end
 
--- // 2. ROUND STATE SYSTEM
--- Defines the possible phases of a game loop.
+-- // 2. STATE MACHINE
+-- Standardized phases for the global game loop synchronization.
 RoundModule.States = {
 	OnLobby = "OnLobby",
 	OnIntermission = "OnIntermission",
@@ -45,16 +45,16 @@ RoundModule.States = {
 
 RoundModule.ActiveState = RoundModule.States.OnLobby
 
--- Updates the current phase of the game.
+-- Transitions the game to a new phase.
 function RoundModule.ChangeState(state: string)
 	RoundModule.ActiveState = state
 end
 
--- // 3. SESSION PLAYER DATA (GEARS)
--- Internal table to track players currently in the round session.
+-- // 3. VOLATILE SESSION DATA
+-- Internal dictionary to track player equipment and status during the active session.
 local players = {}
 
--- Registers a player into the round session.
+-- Initializes a player's session profile.
 function RoundModule.AddPlayer(player: Player)
 	if not players[player] then
 		players[player] = {
@@ -63,39 +63,36 @@ function RoundModule.AddPlayer(player: Player)
 	end
 end
 
--- Removes a player from the session (on leave or elimination).
+-- Cleanup: Removes player from session (essential to prevent memory leaks).
 function RoundModule.RemovePlayer(player: Player)
-	if players[player] then
-		players[player] = nil
-	end
+	players[player] = nil
 end
 
--- Assigns a gear to a player for the current round.
-function RoundModule.EquipGear(player: Player, gear: string)
-	if players[player] then
-		if players[player].EquippedGear == nil then
-			players[player].EquippedGear = gear
-			return true
-		end
-	end
-	return false
-end
-
--- Clears the player's equipped gear slot.
-function RoundModule.UnequipGear(player: Player, gear: string)
-	if players[player] and players[player].EquippedGear == gear then
-		players[player].EquippedGear = nil
+-- Logic for assigning gear; includes validation to prevent multi-equipping.
+function RoundModule.EquipGear(player: Player, gear: string): boolean
+	local session = players[player]
+	if session and session.EquippedGear == nil then
+		session.EquippedGear = gear
 		return true
 	end
 	return false
 end
 
--- Returns the name of the gear the player is using.
+-- Validates and clears the specific gear slot.
+function RoundModule.UnequipGear(player: Player, gear: string): boolean
+	local session = players[player]
+	if session and session.EquippedGear == gear then
+		session.EquippedGear = nil
+		return true
+	end
+	return false
+end
+
+-- API Getters
 function RoundModule.GetGear(player: Player)
 	return players[player] and players[player].EquippedGear
 end
 
--- Returns the entire table of active players.
 function RoundModule.GetPlayers()
 	return players
 end

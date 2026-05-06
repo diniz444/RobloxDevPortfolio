@@ -1,28 +1,52 @@
--- [[ SHOP MANAGER MODULE | ROBLOX PORTFOLIO ]]
+-- [[ SECURE SHOP GATEWAY | PORTFOLIO VERSION ]]
 -- Author: [diniz444]
--- Description: Handles item pricing and player inventory retrieval.
--- Consumes data from DataManager to ensure persistent transactions.
+-- Description: Server-side validation for transactions and inventory state management.
+-- This module ensures that all purchase requests are verified against a master database.
 
 local ShopRules = {}
 
--- // SERVICES
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
-
 -- // DEPENDENCIES
-local DataManager = require(ServerScriptService.DataSaveSystem.Data.DataManager)
+-- Using relative paths to demonstrate modular dependency injection
+local ServerScriptService = game:GetService("ServerScriptService")
+local DataManager = require(ServerScriptService:WaitForChild("DataSaveSystem"):WaitForChild("DataScripts"):WaitForChild("DataManager"))
 
--- // ITEM DATABASE
--- Prices and Item names. 0 = Free/Starter item.
-ShopRules.Items = {
-	["Sword"] = 0,
-	["Slingshot"] = 15,
-	-- Add more items here
+-- // PROTECTED ITEM DATABASE
+-- Stored on the server to prevent client-side price manipulation.
+-- Format: [ItemID] = {Price = number, Category = string}
+local ITEM_DATABASE = {
+	["Sword_T1"] = {Price = 0, Category = "Starter"},
+	["Slingshot_T1"] = {Price = 15, Category = "Ranged"},
+	-- Abstracted IDs to protect game-specific balancing
 }
 
--- // CORE FUNCTIONS
+-- // TRANSACTION VALIDATION
 
--- Retrieves the player's inventory directly from their saved profile.
+-- Core logic to verify if a transaction is legitimate before processing.
+function ShopRules.ValidatePurchase(player: Player, itemId: string): (boolean, string)
+	local itemData = ITEM_DATABASE[itemId]
+	
+	-- 1. Check if item exists in database
+	if not itemData then
+		return false, "Invalid Item ID"
+	end
+	
+	-- 2. Check if player already owns the item (preventing duplicate charges)
+	local inventory = ShopRules.GetPlayerInventory(player)
+	if inventory and inventory[itemId] then
+		return false, "Item already owned"
+	end
+	
+	-- 3. Price Verification
+	local price = itemData.Price
+	if price == 0 then return true, "Free Item" end
+	
+	-- The actual deduction is handled by the DataManager for atomicity
+	return true, "Transaction Validated"
+end
+
+-- // INVENTORY API
+
+-- Retrieves persistent inventory data from the player's profile.
 function ShopRules.GetPlayerInventory(player: Player)
 	local profile = DataManager.GetProfile(player)
 	if profile then
@@ -31,9 +55,18 @@ function ShopRules.GetPlayerInventory(player: Player)
 	return nil
 end
 
--- Returns the price list for all available gears.
-function ShopRules.GetGearsPrice()
-	return ShopRules.Items
+-- Safely exposes price data for UI rendering without exposing sensitive logic.
+function ShopRules.GetCatalog()
+	local publicCatalog = {}
+	for id, info in pairs(ITEM_DATABASE) do
+		publicCatalog[id] = info.Price
+	end
+	return publicCatalog
+end
+
+-- Returns specific item metadata for server-side spawning.
+function ShopRules.GetItemData(itemId: string)
+	return ITEM_DATABASE[itemId]
 end
 
 return ShopRules

@@ -1,165 +1,114 @@
--- [[ ROUND SYSTEM EXECUTOR | ROBLOX PORTFOLIO ]]
+-- [[ ROUND SYSTEM ORCHESTRATOR | FRAMEWORK VERSION ]]
 -- Author: [diniz444]
--- Description: Handles the main game loop, player teleports, map lifecycle, and winners.
--- This script connects the RoundModule logic with the actual Game World.
+-- Description: High-level game loop controller. Handles state transitions, 
+-- session life-cycles, and environmental cleanup.
 
-local RoundModule = require(game.ServerScriptService.RoundSystem.RoundModule)
-local DataManager = require(game.ServerScriptService.DataSaveSystem.Data.DataManager)
-
--- // SERVICES & REMOTES
+local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+-- // DEPENDENCIES
+-- Paths are kept relative to showcase modular architecture
+local RoundModule = require(script.Parent:WaitForChild("RoundModule"))
+local DataManager = require(script.Parent.Parent:WaitForChild("DataManager"))
+
+-- // CONFIGURATION & NETWORKING
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local Events = Remotes.Events.RoundSystem
-local Functions = Remotes.Functions.RoundSystem
+local RoundEvents = Remotes:WaitForChild("Events"):WaitForChild("RoundSystem")
+local UpdateUI = RoundEvents:WaitForChild("ActualizeGUI")
 
-local actualizeGUI = Events.ActualizeGUI
-local equipgear = Functions.EquipGear
-local unequipgear = Functions.UnequipGear
+-- // SESSION VARIABLES
+local currentMap = nil
+local activeContestants = {}
+local lastMatchResult = {Winner = nil, IsTie = false}
 
--- // VARIABLES
-local lastwinner = nil
-local lastmatchtie = false
-local actualmap = nil
-local alivePlayers = {}
-
--- // 1. PLAYER SESSION MANAGEMENT
-
--- Track alive players and handle deaths
-local function SetUpTable()
-	for _, player in ipairs(game.Players:GetPlayers()) do
-		if not table.find(alivePlayers, player) then 
-			table.insert(alivePlayers, player)
-		end
+-- // 1. CONTESTANT MANAGEMENT
+local function InitializeSession()
+	table.clear(activeContestants)
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		table.insert(activeContestants, player)
 		
+		-- Logic to handle mid-round elimination
 		local character = player.Character or player.CharacterAdded:Wait()
 		local humanoid = character:WaitForChild("Humanoid")
 		
-		humanoid.Died:Connect(function()
-			local index = table.find(alivePlayers, player)
-			if index then
-				table.remove(alivePlayers, index)
-			end
+		humanoid.Died:Once(function()
+			local index = table.find(activeContestants, player)
+			if index then table.remove(activeContestants, index) end
 		end)
 	end
 end
 
--- // 2. GEAR SYSTEM HANDLERS
-
-local function GiveGears()
-	local sessionPlayers = RoundModule.GetPlayers()
-	for player, data in pairs(sessionPlayers) do
-		local gear = data.EquippedGear
-		if gear then
-			gear:Clone().Parent = player.Backpack
-		end
+-- // 2. WORLD LOGIC
+local function DeployEnvironment()
+	local mapTemplate = RoundModule.ChooseMap()
+	if mapTemplate then
+		currentMap = mapTemplate:Clone()
+		currentMap.Parent = workspace
+		return mapTemplate.Name
 	end
 end
 
-local function RemoveGears()
-	local sessionPlayers = RoundModule.GetPlayers()
-	for player, data in pairs(sessionPlayers) do
-		local gear = data.EquippedGear
-		if gear then
-			local backpackGear = player.Backpack:FindFirstChild(gear.Name)
-			local charGear = player.Character:FindFirstChild(gear.Name)
-			if backpackGear then backpackGear:Destroy() end
-			if charGear then charGear:Destroy() end
-		end
+local function CleanupEnvironment()
+	if currentMap then
+		currentMap:Destroy()
+		currentMap = nil
 	end
 end
 
--- // 3. MAP & WORLD MANAGEMENT
+-- // 3. STATE HANDLERS (The Orquestration)
 
-local function ChooseMap()
-	local map = RoundModule.ChooseMap()
-	if map then
-		actualmap = map:Clone()
-		actualmap.Parent = workspace
-		print("Map chosen: " .. map.Name)
-		return map.Name
-	end
-end
-
-local function DestroyMap()
-	if actualmap then
-		actualmap:Destroy()
-		actualmap = nil
-	end
-end
-
--- // 4. TELEPORT & UTILS
-
-local function TPToLobby()
-	local lobby = workspace:WaitForChild("Lobby")
-	local spawnCF = lobby.SpawnLocation.CFrame
-	
-	for _, player in pairs(game.Players:GetPlayers()) do
-		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			player.Character:PivotTo(spawnCF + Vector3.new(0, 5, 0))
-		end
-	end
-end
-
-local function TPToMap(spawns: Folder)
-	local spawnPoints = spawns:GetChildren()
-	for _, player in pairs(game.Players:GetPlayers()) do
-		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local randomSpawn = spawnPoints[math.random(1, #spawnPoints)]
-			player.Character:PivotTo(randomSpawn.CFrame + Vector3.new(0, 5, 0))
-		end
-	end
-end
-
--- // 5. ROUND STATES (THE LOOP)
-
-local function OnLobby()
-	local duration = 10
-	while duration > 0 do
-		duration -= 1
-		local playerCount = #game.Players:GetPlayers()
+local function HandleLobby()
+	local timer = 15
+	while timer > 0 do
+		timer -= 1
+		local playerCount = #Players:GetPlayers()
 		
-		if playerCount < 2 then
-			actualizeGUI:FireAllClients(RoundModule.States.OnLobby, duration, nil, lastwinner, false, true)
-			duration = 10 -- Reset intermission if not enough players
-		else
-			actualizeGUI:FireAllClients(RoundModule.States.OnLobby, duration)
-			if duration == 0 then RoundModule.ChangeState(RoundModule.States.OnIntermission) end
+		-- UI Sync: Passing state, timer, and requirement status
+		UpdateUI:FireAllClients(RoundModule.States.OnLobby, timer, nil, nil, false, playerCount < 2)
+		
+		if playerCount >= 2 and timer == 0 then
+			RoundModule.ChangeState(RoundModule.States.OnIntermission)
+		elseif playerCount < 2 then
+			timer = 15 -- Reset countdown if requirements aren't met
 		end
 		task.wait(1)
 	end
 end
 
-local function OnIntermission()
-	local mapName = ChooseMap()
-	local duration = 3
-	while duration > 0 do
-		duration -= 1
-		actualizeGUI:FireAllClients(RoundModule.States.OnIntermission, duration, mapName)
-		if duration == 0 then
-			SetUpTable()
-			TPToMap(actualmap.Spawns)
-			GiveGears()
+local function HandleIntermission()
+	local mapName = DeployEnvironment()
+	local timer = 5
+	
+	while timer > 0 do
+		timer -= 1
+		UpdateUI:FireAllClients(RoundModule.States.OnIntermission, timer, mapName)
+		
+		if timer == 0 then
+			InitializeSession()
+			-- Abstracted: Teleportation and Gear distribution logic goes here
 			RoundModule.ChangeState(RoundModule.States.OnRound)
 		end
 		task.wait(1)
 	end
 end
 
-local function OnRound()
-	local duration = 10 -- Adjust as needed
-	while duration > 0 do
-		duration -= 1
-		actualizeGUI:FireAllClients(RoundModule.States.OnRound, duration)
+local function HandleRound()
+	local timer = 120 -- Default round duration
+	while timer > 0 do
+		timer -= 1
+		UpdateUI:FireAllClients(RoundModule.States.OnRound, timer)
 		
-		if #alivePlayers == 1 then
-			lastwinner = alivePlayers[1]
-			DataManager.AddWin(lastwinner, 1)
-			lastmatchtie = false
-			RoundModule.ChangeState(RoundModule.States.OnEnd)
-			break
-		elseif duration == 0 or #alivePlayers == 0 then
-			lastmatchtie = true
-			lastwinner = nil
+		-- Win Condition Check
+		if #activeContestants <= 1 then
+			lastMatchResult.Winner = activeContestants[1]
+			lastMatchResult.IsTie = (#activeContestants == 0)
+			
+			if lastMatchResult.Winner then
+				DataManager.UpdateStat(lastMatchResult.Winner, "Wins", 1)
+			end
+			
 			RoundModule.ChangeState(RoundModule.States.OnEnd)
 			break
 		end
@@ -167,30 +116,32 @@ local function OnRound()
 	end
 end
 
-local function OnEnd()
-	local duration = 3
-	RemoveGears()
-	alivePlayers = {}
-	TPToLobby()
+local function HandleEnd()
+	local timer = 5
+	-- Abstracted: Post-round cleanup (Teleport to lobby, Unequip gears)
 	
-	while duration > 0 do
-		duration -= 1
-		actualizeGUI:FireAllClients(RoundModule.States.OnEnd, duration, actualmap, lastwinner, lastmatchtie)
-		if duration == 0 then
-			DestroyMap()
+	while timer > 0 do
+		timer -= 1
+		UpdateUI:FireAllClients(RoundModule.States.OnEnd, timer, nil, lastMatchResult.Winner, lastMatchResult.IsTie)
+		
+		if timer == 0 then
+			CleanupEnvironment()
 			RoundModule.ChangeState(RoundModule.States.OnLobby)
 		end
 		task.wait(1)
 	end
 end
 
--- // 6. MAIN GAME LOOP
+-- // 4. MAIN ENGINE
+-- Using a robust state-check loop to drive the game
 while true do
-	local state = RoundModule.ActiveState
-	if state == RoundModule.States.OnLobby then OnLobby()
-	elseif state == RoundModule.States.OnIntermission then OnIntermission()
-	elseif state == RoundModule.States.OnRound then OnRound()
-	elseif state == RoundModule.States.OnEnd then OnEnd()
+	local currentState = RoundModule.ActiveState
+	
+	if currentState == RoundModule.States.OnLobby then HandleLobby()
+	elseif currentState == RoundModule.States.OnIntermission then HandleIntermission()
+	elseif currentState == RoundModule.States.OnRound then HandleRound()
+	elseif currentState == RoundModule.States.OnEnd then HandleEnd()
 	end
-	task.wait(0.1)
+	
+	task.wait(0.5)
 end

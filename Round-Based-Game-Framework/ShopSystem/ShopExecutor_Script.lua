@@ -1,72 +1,74 @@
--- [[ SHOP SERVER EXECUTOR | ROBLOX PORTFOLIO ]]
+-- [[ SHOP TRANSACTION ORCHESTRATOR | SECURE VERSION ]]
 -- Author: [diniz444]
--- Description: Handles server-side shop transactions and GUI updates.
--- This script validates purchases and communicates with DataManager.
+-- Description: Server-side handler for economic transactions. 
+-- Implements strict validation to prevent exploit-based currency manipulation.
 
-local ShopModule = require(script.Parent.ShopRules)
-local DataManager = require(game.ServerScriptService.DataSaveSystem.Data.DataManager)
-
--- // SERVICES
+local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- // REMOTES
+-- // DEPENDENCIES
+local ShopModule = require(script.Parent:WaitForChild("ShopManager_Module"))
+local DataManager = require(ServerScriptService:WaitForChild("DataSaveSystem"):WaitForChild("DataScripts"):WaitForChild("DataManager"))
+
+-- // NETWORKING SETUP
 local ShopRemotes = ReplicatedStorage:WaitForChild("Remotes")
-local ShopEvents = ShopRemotes.Events.ShopSystem
-local ShopFunctions = ShopRemotes.Functions.ShopSystem
+local ShopEvents = ShopRemotes:WaitForChild("Events"):WaitForChild("ShopSystem")
+local ShopFunctions = ShopRemotes:WaitForChild("Functions"):WaitForChild("ShopSystem")
 
-local updateGUI = ShopEvents.UpdateGUI
-local openedGUI = ShopEvents.OpenedGUI
-local updateMoneyGUI = ShopEvents.UpdateMoneyGUI
-local buyItemFunction = ShopFunctions.BuyItem
+-- Remote Signals
+local SyncShopUI = ShopEvents:WaitForChild("UpdateGUI")
+local OnShopOpened = ShopEvents:WaitForChild("OpenedGUI")
+local BuyItemRequest = ShopFunctions:WaitForChild("BuyItem")
 
--- // 1. GUI SYNCHRONIZATION
+-- // 1. STATE SYNCHRONIZATION
 
--- Sends ownership and price data to the client to refresh the Shop UI.
-local function UpdateShopGui(player: Player)
-	local ownedItems = ShopModule.GetPlayerInventory(player)
-	local itemPrices = ShopModule.GetGearsPrice()
+-- Synchronizes the client's view with the server's authoritative data.
+local function RefreshClientView(player: Player)
+	local inventory = ShopModule.GetPlayerInventory(player)
+	local catalog = ShopModule.GetCatalog()
 
-	if ownedItems and itemPrices then
-		updateGUI:FireClient(player, ownedItems, itemPrices)
+	if inventory and catalog then
+		SyncShopUI:FireClient(player, inventory, catalog)
 	end
 end
 
--- Refresh UI when the player opens the Shop.
-openedGUI.OnServerEvent:Connect(function(player: Player)
-	UpdateShopGui(player)
-	
-	local profile = DataManager.GetProfile(player)
-	if profile then
-		updateMoneyGUI:FireClient(player, profile.Data.Cash)
-	end
+-- Handles the initial handshake when a player interacts with the Shop NPC/UI.
+OnShopOpened.OnServerEvent:Connect(function(player: Player)
+	RefreshClientView(player)
 end)
 
--- // 2. TRANSACTION LOGIC
+-- // 2. SECURE TRANSACTION ENGINE
 
--- Validates and processes item purchases.
-buyItemFunction.OnServerInvoke = function(player: Player, gear: Tool)
-	local gearName = gear.Name
+-- OnServerInvoke is used to provide immediate feedback (Success/Fail) to the client.
+BuyItemRequest.OnServerInvoke = function(player: Player, itemId: string): boolean
+	-- 1. Identity & Data Integrity Check
 	local profile = DataManager.GetProfile(player)
+	if not (profile and typeof(itemId) == "string") then 
+		return false 
+	end
 	
-	if not profile then return false end
+	-- 2. Business Logic Validation (Price, Ownership, Existence)
+	local isValid, reason = ShopModule.ValidatePurchase(player, itemId)
 	
-	local inventory = profile.Data.Inventory
-	local itemPrices = ShopModule.GetGearsPrice()
-	local price = itemPrices[gearName]
-	
-	-- Security check: Verify if price exists and player doesn't already own the item
-	if price and inventory[gearName] == false then
-		-- Check if player has enough currency
-		if profile.Data.Cash >= price then
-			-- Process transaction via DataManager
-			DataManager.RemoveCash(player, price)
-			inventory[gearName] = true
+	if isValid then
+		local itemData = ShopModule.GetItemData(itemId)
+		local price = itemData.Price
+		
+		-- 3. Atomic Transaction: Check balance and deduct in a single sequence
+		-- This prevents 'race conditions' where a player could buy two items at once
+		local success = DataManager.Purchase(player, "Cash", price)
+		
+		if success then
+			-- 4. Grant Item & Update State
+			DataManager.GrantItem(player, "Inventory", itemId)
 			
-			-- Sync GUI after purchase
-			UpdateShopGui(player)
-			return true -- Transaction Successful
+			-- Final Sync to ensure UI reflects new balance and ownership
+			RefreshClientView(player)
+			print(string.format("[Shop]: %s purchased %s for %d", player.Name, itemId, price))
+			return true
 		end
 	end
 	
-	return false -- Transaction Failed
+	warn(string.format("[Shop]: Transaction failed for %s. Reason: %s", player.Name, reason or "Unknown"))
+	return false
 end
