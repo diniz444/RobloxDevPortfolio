@@ -2,6 +2,9 @@
 
 This repository contains my professional game frameworks. Each system is modular, secure, and optimized for production.
 
+[!NOTE]
+This repository is a curated showcase of core system architecture. To ensure clarity and focus for reviewers, I have included only the primary logic scripts. Secondary boilerplate code, third-party libraries, and basic utility scripts have been omitted to highlight my clean coding standards and back-end engineering skills.
+
 ---
 
 Round-Based-Game Framework (Core Game Loop)
